@@ -1,5 +1,5 @@
 """Test version information."""
-from dyndispatch import __version__
+from pyvers import __version__
 
 
 def test_version():

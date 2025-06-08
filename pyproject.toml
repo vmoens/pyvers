@@ -1,14 +1,15 @@
 [project]
-name = "dyndispatch"
+name = "pyvers"
 version = "0.1.0"
-description = "A dynamic dispatch library for Python"
+description = "A Python library for managing multiple versions of dependencies"
 authors = [
     {name = "vmoens",email = "vincentmoens@gmail.com"}
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
+    "packaging (>=25.0,<26.0)"
 ]
 
 
@@ -56,7 +57,7 @@ target-version = "py312"
 [tool.ruff.lint]
 # Enable pycodestyle (`E`), Pyflakes (`F`), and import sorting (`I`)
 select = ["E", "F", "I", "N", "B", "W", "C90", "UP"]
-ignore = []
+ignore = ["E501"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
@@ -70,11 +71,11 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 max-complexity = 10
 
 [tool.ruff.lint.isort]
-known-first-party = ["dyndispatch"]
+known-first-party = ["pyvers"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --cov=dyndispatch --cov-report=term-missing"
+addopts = "-ra -q --cov=pyvers --cov-report=term-missing"
 testpaths = [
     "tests",
 ]
