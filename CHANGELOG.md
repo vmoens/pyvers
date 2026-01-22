@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         return arr * 3
     ```
 
+### Changed
+
+- Removed `packaging` dependency - pyvers now has zero external dependencies
+  - Replaced `packaging.version.parse` with a lightweight internal `_parse_version` function
+  - Resolves version conflicts with projects that pin older versions of `packaging`
+
 ## [0.1.0] - 2025-06-08
 
 ### Added
