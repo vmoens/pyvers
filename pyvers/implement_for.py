@@ -1,9 +1,10 @@
-# Dynamic dispatch implementation based on module versions.
+# Dynamic dispatch implementation based on module versions.
 from __future__ import annotations
 
 import collections
 import inspect
 import logging
+import re
 import sys
 import warnings
 from collections.abc import Callable
@@ -12,7 +13,17 @@ from functools import update_wrapper, wraps
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from packaging.version import parse
+
+def _parse_version(version: str) -> tuple[int, ...]:
+    """Parse a version string into a tuple of integers for comparison.
+
+    Handles PEP 440 versions by extracting the release segment (numeric parts).
+    Examples: "1.2.3" -> (1, 2, 3), "2.0.0rc1" -> (2, 0, 0), "1.0a1" -> (1, 0)
+    """
+    # Extract only the numeric release parts, stopping at first non-numeric segment
+    parts = re.split(r"[^0-9]+", version)
+    # Filter out empty strings and convert to integers
+    return tuple(int(p) for p in parts if p)
 
 if TYPE_CHECKING:
     from typing import Self
@@ -194,10 +205,10 @@ class implement_for:  # noqa: N801
     def check_version(
         version: str, from_version: str | None, to_version: str | None
     ) -> bool:
-        version = parse(".".join([str(v) for v in parse(version).release]))
-        return (from_version is None or version >= parse(from_version)) and (
-            to_version is None or version < parse(to_version)
-        )
+        version_tuple = _parse_version(version)
+        return (
+            from_version is None or version_tuple >= _parse_version(from_version)
+        ) and (to_version is None or version_tuple < _parse_version(to_version))
 
     @staticmethod
     def get_class_that_defined_method(f: Callable) -> Any | None:

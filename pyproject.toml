@@ -8,9 +8,7 @@ authors = [
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = [
-    "packaging (>=25.0,<26.0)"
-]
+dependencies = []
 
 
 [build-system]
