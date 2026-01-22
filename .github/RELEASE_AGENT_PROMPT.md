@@ -155,7 +155,37 @@ Verify the workflow was triggered:
 gh run list --workflow=release.yml --limit=5
 ```
 
-Wait for the workflow to complete, then confirm the draft release exists:
+Wait for the workflow to complete (watch for status to become "completed"):
+
+```bash
+gh run watch
+```
+
+### Step 11: Update Release Notes
+
+The workflow creates a draft release with auto-generated notes. Improve them using the CHANGELOG.
+
+1. Extract the relevant section from CHANGELOG.md for this version
+2. Edit the draft release with the proper release notes:
+
+```bash
+gh release edit <VERSION> --notes "$(cat <<'EOF'
+## What's New in <VERSION>
+
+<PASTE CHANGELOG SECTION HERE>
+
+**Full Changelog**: https://github.com/vmoens/pyvers/compare/v<PREVIOUS_VERSION>...<VERSION>
+EOF
+)"
+```
+
+Alternatively, create a temporary file with the notes and use:
+
+```bash
+gh release edit <VERSION> --notes-file RELEASE_NOTES.md
+```
+
+Verify the release notes were updated:
 
 ```bash
 gh release view <VERSION>
@@ -224,7 +254,8 @@ After completing all steps, provide this summary to the user:
 - [x] PR created and merged to main
 - [x] Release branch rebased on main
 - [x] Tag <VERSION> created and pushed
-- [x] Build workflow triggered (creates draft release automatically)
+- [x] Build workflow completed (draft release created with wheels)
+- [x] Release notes updated from CHANGELOG
 
 ### Manual Steps Required:
 1. Review draft release: <RELEASE_URL>
