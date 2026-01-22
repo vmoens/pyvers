@@ -130,6 +130,25 @@ def test_register_api_preserves_name():
     assert register_api_test.__name__ == "register_api_test"
 
 
+class TestInstanceMethodBinding:
+    """Test that @implement_for works correctly on instance methods."""
+
+    @implement_for("_utils_internal", "0.3")
+    def instance_method(self, x):
+        return f"instance:{x}:self={self.__class__.__name__}"
+
+    def test_instance_method_binding(self):
+        """Test that self is properly bound when calling instance methods."""
+        result = self.instance_method("hello")
+        assert result == "instance:hello:self=TestInstanceMethodBinding"
+
+    def test_instance_method_from_instance(self):
+        """Test calling instance method from an instance variable."""
+        obj = TestInstanceMethodBinding()
+        result = obj.instance_method("world")
+        assert result == "instance:world:self=TestInstanceMethodBinding"
+
+
 def test_implement_for_reset():
     assert implement_for_test_functions.select_correct_version() == "0.3+"
     _impl = copy(implement_for._implementations)
