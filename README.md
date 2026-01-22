@@ -12,7 +12,7 @@ A Python library for dynamic dispatch based on module versions and backends.
 
 ## Usage
 
-pyvers lets you write version-specific implementations that are automatically selected based on the installed package version or backend. Here's a simple example:
+pyvers lets you write version-specific implementations that are automatically selected based on the installed package version or backend. Here's a simple example using the **register API** (recommended):
 
 ```python
 from pyvers import implement_for, register_backend, get_backend, set_backend
@@ -20,42 +20,45 @@ from pyvers import implement_for, register_backend, get_backend, set_backend
 # Register numpy backend - you could register more than one backend!
 register_backend(group="numpy", backends={"numpy": "numpy"})
 
+# Define the function with @implement_for, then register version-specific implementations
+@implement_for("numpy")
+def create_mask(arr):
+    """Create a boolean mask marking positive values."""
+    raise NotImplementedError("No matching numpy version found")
+
 # Function for NumPy < 2.0 (using bool8)
+@create_mask.register(from_version=None, to_version="2.0.0")
+def _(arr):
+    np = get_backend("numpy")
+    return np.array([x > 0 for x in arr], dtype=np.bool8)
+
+# Function for NumPy >= 2.0 (using bool_)
+@create_mask.register(from_version="2.0.0")
+def _(arr):
+    np = get_backend("numpy")
+    return np.array([x > 0 for x in arr], dtype=np.bool_)
+
+# The correct implementation is automatically chosen based on your NumPy version
+result = create_mask([-1, 2, -3, 4])
+print("NumPy result:", result)
+```
+
+The `.register()` API follows the same pattern as `functools.singledispatch`. Using `_` as the function name is a Python convention that linters recognize, so you don't need `# noqa` comments.
+
+### Alternative: Traditional API
+
+You can also use the traditional decorator pattern (requires `# noqa: F811` for linters):
+
+```python
 @implement_for("numpy", from_version=None, to_version="2.0.0")
 def create_mask(arr):
     np = get_backend("numpy")
     return np.array([x > 0 for x in arr], dtype=np.bool8)
 
-# Function for NumPy >= 2.0 (using bool_)
 @implement_for("numpy", from_version="2.0.0")
 def create_mask(arr):  # noqa: F811
     np = get_backend("numpy")
     return np.array([x > 0 for x in arr], dtype=np.bool_)
-
-# Implement a jax version of this
-register_backend(group="numpy", backends={"jax.numpy": "jax.numpy"})
-register_backend(group="jax", backends={"jax": "jax"})  # For version checking
-
-@implement_for("jax")  # Check jax version instead of jax.numpy
-def create_mask(arr):  # noqa: F811
-    import jax
-    import jax.numpy as jnp  # Import directly for clarity
-    
-    # Use JAX's JIT compilation and vectorization
-    @jax.jit
-    def _create_mask(x):
-        return jnp.greater(x, 0).astype(jnp.bool_)
-    
-    return _create_mask(jnp.asarray(arr))
-
-# The correct implementation is automatically chosen based on your NumPy version
-result = create_mask([-1, 2, -3, 4])
-print("NumPy result:", result)
-
-with set_backend("numpy", "jax.numpy"):
-    result = create_mask([-1, 2, -3, 4])
-    print("JAX result:", result)
-
 ```
 
 Check out the [examples](examples/) folder for more advanced use cases:
@@ -76,12 +79,17 @@ pip install pyvers
 
 Automatically select the right implementation based on package versions:
 ```python
-@implement_for("torch", from_version="2.0.0")
+@implement_for("torch")
 def optimize_model(model):
+    """Optimize a model using version-appropriate techniques."""
+    raise NotImplementedError("No matching torch version")
+
+@optimize_model.register(from_version="2.0.0")
+def _(model):
     return torch.compile(model)  # Only available in PyTorch 2.0+
 
-@implement_for("torch", from_version=None, to_version="2.0.0")
-def optimize_model(model):  # noqa: F811
+@optimize_model.register(from_version=None, to_version="2.0.0")
+def _(model):
     return model  # Fallback for older versions
 ```
 
