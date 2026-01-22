@@ -103,15 +103,50 @@ jobs:
         id: tag
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          # Get version without 'v' prefix (e.g., v0.2.1 -> 0.2.1)
+          VERSION="${{ steps.tag.outputs.TAG_NAME }}"
+          VERSION="${VERSION#v}"
+
+          # Extract the section for this version from CHANGELOG.md
+          # Matches from "## [VERSION]" until the next "## [" or end of file
+          awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") found=1
+              next
+            }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+
+          # Check if we found any notes
+          if [ ! -s release_notes.md ]; then
+            echo "Warning: No release notes found for version $VERSION in CHANGELOG.md"
+            echo "Using auto-generated notes instead"
+            echo "USE_AUTO_NOTES=true" >> $GITHUB_OUTPUT
+          else
+            echo "USE_AUTO_NOTES=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ steps.tag.outputs.TAG_NAME }} \
-            --draft \
-            --title "Release ${{ steps.tag.outputs.TAG_NAME }}" \
-            --generate-notes \
-            dist/*
+          if [ "${{ steps.notes.outputs.USE_AUTO_NOTES }}" = "true" ]; then
+            gh release create ${{ steps.tag.outputs.TAG_NAME }} \
+              --draft \
+              --title "Release ${{ steps.tag.outputs.TAG_NAME }}" \
+              --generate-notes \
+              dist/*
+          else
+            gh release create ${{ steps.tag.outputs.TAG_NAME }} \
+              --draft \
+              --title "Release ${{ steps.tag.outputs.TAG_NAME }}" \
+              --notes-file release_notes.md \
+              dist/*
+          fi
 
   publish-pypi:
     name: Publish to PyPI
