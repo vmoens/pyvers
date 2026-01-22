@@ -9,7 +9,7 @@ import sys
 import warnings
 from collections.abc import Callable
 from copy import copy
-from functools import update_wrapper, wraps
+from functools import partial, update_wrapper, wraps
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -67,6 +67,13 @@ class _RegisterableFunction:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._fn(*args, **kwargs)
+
+    def __get__(self, obj: Any, objtype: type | None = None) -> Any:
+        """Implement the descriptor protocol to bind self for instance methods."""
+        if obj is None:
+            return self
+        # Return a bound method-like callable that passes obj as first argument
+        return partial(self, obj)
 
     def register(
         self, from_version: str | None = None, to_version: str | None = None
