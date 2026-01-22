@@ -16,7 +16,7 @@ Before starting the release process, verify:
 1. You are in the repository root directory
 2. Git is configured and you have push access
 3. GitHub CLI (`gh`) is installed and authenticated
-4. The current branch is the release branch (e.g., `release/v0.2.0`)
+4. You are on the `main` branch and it is up to date
 
 Run these commands to verify:
 
@@ -29,16 +29,25 @@ gh auth status
 
 Execute these steps in order. Stop and report to the user if any step fails.
 
-### Step 1: Fetch Latest and Create Version Bump Branch
+### Step 1: Create Release Branch (MANDATORY)
+
+**You MUST always create a release branch for every release.** This is required for consistency and to maintain release history.
 
 ```bash
 git fetch origin
-git checkout -b version-bump/<VERSION> origin/main
+git checkout -b release/<VERSION> origin/main
+git push -u origin release/<VERSION>
 ```
 
 Replace `<VERSION>` with the version tag (e.g., `v0.2.0`).
 
-### Step 2: Update Version in pyproject.toml
+### Step 2: Create Version Bump Branch
+
+```bash
+git checkout -b version-bump/<VERSION> origin/main
+```
+
+### Step 3: Update Version in pyproject.toml
 
 Edit `pyproject.toml` and update the version field:
 
@@ -48,7 +57,7 @@ version = "<VERSION_WITHOUT_V>"
 
 For example, if releasing `v0.2.0`, set `version = "0.2.0"`.
 
-### Step 3: Update CHANGELOG.md
+### Step 4: Update CHANGELOG.md
 
 1. Find the `## [Unreleased]` section
 2. Change it to `## [<VERSION_WITHOUT_V>] - <TODAY_DATE>`
@@ -76,7 +85,7 @@ Example transformation:
 - New feature X
 ```
 
-### Step 4: Run Sanity Checks
+### Step 5: Run Sanity Checks
 
 Run the test suite with strict warning handling:
 
@@ -89,14 +98,14 @@ python -m pytest tests/ -W error::DeprecationWarning -W error::FutureWarning -v
 - If deprecation or future warnings appear, report them to the user and do not proceed
 - The user must acknowledge and decide whether to proceed or fix issues first
 
-### Step 5: Commit Version Bump
+### Step 6: Commit Version Bump
 
 ```bash
 git add pyproject.toml CHANGELOG.md
 git commit -m "Bump version to <VERSION>"
 ```
 
-### Step 6: Push and Create PR
+### Step 7: Push and Create PR
 
 ```bash
 git push -u origin version-bump/<VERSION>
@@ -113,7 +122,7 @@ gh pr create --base main --title "Release <VERSION>" --body "## Summary
 - [ ] No deprecation or future warnings"
 ```
 
-### Step 7: Merge PR to Main
+### Step 8: Merge PR to Main
 
 Wait for CI checks to pass, then merge:
 
@@ -123,7 +132,7 @@ gh pr merge --merge --delete-branch
 
 If merge fails due to CI checks, wait and retry. Report to user if checks fail.
 
-### Step 8: Update Local Main and Rebase Release Branch
+### Step 9: Update Local Main and Rebase Release Branch
 
 ```bash
 git checkout main
@@ -133,7 +142,7 @@ git rebase main
 git push --force-with-lease origin release/<VERSION>
 ```
 
-### Step 9: Create and Push Tag
+### Step 10: Create and Push Tag
 
 Create the tag on main:
 
@@ -143,7 +152,7 @@ git tag -a <VERSION> -m "Release <VERSION>"
 git push origin <VERSION>
 ```
 
-### Step 10: Verify Build Workflow Triggered
+### Step 11: Verify Build Workflow Triggered
 
 The tag push automatically triggers the release workflow, which:
 - Builds wheels for all platforms
@@ -191,22 +200,22 @@ No `PYPI_API_TOKEN` secret is required - authentication happens via OIDC.
 
 ## Error Handling
 
-### If tests fail in Step 4:
+### If tests fail in Step 5:
 - Report the test failures to the user
 - Ask if they want to fix the issues before proceeding
 - Do NOT continue with the release
 
-### If PR merge fails in Step 7:
+### If PR merge fails in Step 8:
 - Check the PR status: `gh pr status`
 - Report any failing checks to the user
 - Wait for user guidance
 
-### If rebase conflicts in Step 8:
+### If rebase conflicts in Step 9:
 - Report the conflicts to the user
 - Provide the conflicting files
 - Ask user to resolve manually or provide guidance
 
-### If tag already exists in Step 9:
+### If tag already exists in Step 10:
 - Report to user that the tag already exists
 - Ask if they want to delete and recreate: `git tag -d <VERSION> && git push origin :refs/tags/<VERSION>`
 
@@ -218,6 +227,7 @@ After completing all steps, provide this summary to the user:
 ## Release <VERSION> Preparation Complete
 
 ### Completed Steps:
+- [x] Release branch release/<VERSION> created and pushed
 - [x] Version bumped to <VERSION> in pyproject.toml
 - [x] CHANGELOG.md updated with release date
 - [x] Tests passed with no deprecation/future warnings
