@@ -34,8 +34,9 @@ coverage.xml
 .hypothesis/
 cover/
 
-# Poetry
+# Poetry / uv
 poetry.lock
+uv.lock
 
 # Virtual Environment
 .env
