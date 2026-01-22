@@ -9,18 +9,27 @@ from pyvers import get_backend, implement_for, register_backend
 # Register numpy backend versions
 register_backend(group="numpy", backends={"numpy": "numpy"})
 
-# Function to create a boolean mask array
-# In numpy 1.x, we can use bool8 which was the explicit type for boolean arrays
-@implement_for("numpy", from_version=None, to_version="2.0.0")
+
+# Using the register API (recommended) - no noqa comments needed!
+# The base function defines the signature and docstring
+@implement_for("numpy")
 def create_boolean_mask(arr):
+    """Create a boolean mask from an array, marking positive values as True."""
+    raise NotImplementedError("No matching numpy version found")
+
+
+# In numpy 1.x, we can use bool8 which was the explicit type for boolean arrays
+@create_boolean_mask.register(from_version=None, to_version="2.0.0")
+def _(arr):
     print(f"Using numpy {get_backend('numpy').__version__} (pre-2.0)")
     np = get_backend("numpy")
     # In numpy 1.x, bool8 was commonly used for boolean arrays
     return np.array([x > 0 for x in arr], dtype=np.bool8)
 
+
 # In numpy 2.x, bool8 was removed in favor of just bool_
-@implement_for("numpy", from_version="2.0.0")
-def create_boolean_mask(arr):  # noqa: F811
+@create_boolean_mask.register(from_version="2.0.0")
+def _(arr):
     print(f"Using numpy {get_backend('numpy').__version__} (2.0+)")
     np = get_backend("numpy")
     # In numpy 2.x, we use bool_ as bool8 was removed

@@ -11,6 +11,14 @@ import pytest
 
 from pyvers import implement_for
 from pyvers.backends import set_gym_backend
+from pyvers.implement_for import _RegisterableFunction
+
+
+def _unwrap_fn(fn):
+    """Unwrap a _RegisterableFunction to get the underlying callable."""
+    if isinstance(fn, _RegisterableFunction):
+        return fn._fn
+    return fn
 
 
 def uncallable(f):
@@ -70,6 +78,24 @@ class implement_for_test_functions:  # noqa: N801
         return "0.4+"
 
 
+# Test the new register API - no noqa needed!
+# This is a module-level function demonstrating the singledispatch-style API
+@implement_for("_utils_internal")
+def register_api_test(x):
+    """Base function that should not be called if a matching version exists."""
+    raise NotImplementedError("No matching version")
+
+
+@register_api_test.register(from_version="0.3")
+def _(x):
+    return f"register_0.3+:{x}"
+
+
+@register_api_test.register(from_version="0.2", to_version="0.3")
+def _(x):
+    return f"register_0.2-0.3:{x}"
+
+
 def test_implement_for():
     assert implement_for_test_functions.select_correct_version() == "0.3+"
 
@@ -84,6 +110,24 @@ def test_implement_for_missing_version():
     msg = r"Supported version of 'test_implement_for.implement_for_test_functions.missing_version' has not been found."
     with pytest.raises(ModuleNotFoundError, match=msg):
         implement_for_test_functions.missing_version()
+
+
+def test_register_api():
+    """Test the singledispatch-style .register() API."""
+    # _utils_internal has version 0.3, so the "0.3+" implementation should be used
+    result = register_api_test("hello")
+    assert result == "register_0.3+:hello"
+
+
+def test_register_api_has_register_method():
+    """Test that decorated functions have a .register() method."""
+    assert hasattr(register_api_test, "register")
+    assert callable(register_api_test.register)
+
+
+def test_register_api_preserves_name():
+    """Test that the register API preserves the original function name."""
+    assert register_api_test.__name__ == "register_api_test"
 
 
 def test_implement_for_reset():
@@ -184,19 +228,17 @@ def test_set_gym_environments(
                 break
 
     with set_gym_backend(gymnasium):
-        assert (
-            _utils_internal._set_gym_environments is expected_fn_gymnasium
-        ), expected_fn_gym
+        # The module attribute may be wrapped in _RegisterableFunction
+        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+        assert actual_fn is expected_fn_gymnasium, expected_fn_gym
 
     with set_gym_backend(gym):
-        assert (
-            _utils_internal._set_gym_environments is expected_fn_gym
-        ), expected_fn_gymnasium
+        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+        assert actual_fn is expected_fn_gym, expected_fn_gymnasium
 
     with set_gym_backend(gymnasium):
-        assert (
-            _utils_internal._set_gym_environments is expected_fn_gymnasium
-        ), expected_fn_gym
+        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+        assert actual_fn is expected_fn_gymnasium, expected_fn_gym
 
 
 if __name__ == "__main__":
