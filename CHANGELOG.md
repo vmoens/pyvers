@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- New `.register()` API for `@implement_for` decorator, following the `functools.singledispatch` pattern
+  - Allows registering version-specific implementations without linter warnings
+  - Use `_` as the function name for registered implementations (recognized by linters)
+  - Example:
+    ```python
+    @implement_for("numpy")
+    def process_array(arr):
+        raise NotImplementedError("No matching version")
+
+    @process_array.register(from_version="2.0.0")
+    def _(arr):
+        # numpy >= 2.0 implementation
+        return arr * 3
+    ```
+
 ## [0.1.0] - 2025-06-08
 
 ### Added

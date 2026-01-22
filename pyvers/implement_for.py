@@ -8,11 +8,14 @@ import sys
 import warnings
 from collections.abc import Callable
 from copy import copy
-from functools import wraps
+from functools import update_wrapper, wraps
 from importlib import import_module
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from packaging.version import parse
+
+if TYPE_CHECKING:
+    from typing import Self
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,83 @@ logger = logging.getLogger(__name__)
 VERBOSE = False
 
 T = TypeVar("T", bound=Callable)
+
+
+class _RegisterableFunction:
+    """Wrapper that provides .register() for version-specific implementations.
+
+    This class wraps a function decorated with @implement_for and provides a
+    .register() method similar to functools.singledispatch, allowing users to
+    register additional implementations for different version ranges without
+    triggering linter warnings about function redefinition.
+
+    Example:
+        >>> @implement_for("numpy")
+        ... def process_array(arr):
+        ...     raise NotImplementedError("No matching implementation")
+        ...
+        >>> @process_array.register(from_version=None, to_version="2.0.0")
+        ... def _(arr):
+        ...     # numpy < 2.0 implementation
+        ...     return arr * 2
+        ...
+        >>> @process_array.register(from_version="2.0.0")
+        ... def _(arr):
+        ...     # numpy >= 2.0 implementation
+        ...     return arr * 3
+    """
+
+    def __init__(self, fn: Callable, implement_for_instance: implement_for) -> None:
+        self._impl = implement_for_instance
+        self._fn = fn
+        update_wrapper(self, fn)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._fn(*args, **kwargs)
+
+    def register(
+        self, from_version: str | None = None, to_version: str | None = None
+    ) -> Callable[[T], Self]:
+        """Register an implementation for a specific version range.
+
+        This method provides a singledispatch-style API for registering
+        version-specific implementations. Use ``_`` as the function name
+        to avoid linter warnings about redefinition.
+
+        Args:
+            from_version: Version from which this implementation is compatible.
+                Can be None for open lower bound.
+            to_version: Version from which this implementation is no longer
+                compatible. Can be None for open upper bound.
+
+        Returns:
+            A decorator that registers the implementation and returns self.
+
+        Example:
+            >>> @my_function.register(from_version="1.0.0", to_version="2.0.0")
+            ... def _(x):
+            ...     return x + 1
+        """
+
+        def decorator(impl_fn: T) -> Self:
+            setter = implement_for(
+                self._impl.module_name,
+                from_version,
+                to_version,
+                class_method=self._impl.class_method,
+                compilable=self._impl._compilable,
+            )
+            # Use the original function name for registration
+            setter.func_name = self._impl.func_name
+            setter.fn = impl_fn
+            implement_for._lazy_impl[self._impl.func_name].append(setter._call)
+            return self
+
+        return decorator
+
+    def __repr__(self) -> str:
+        return f"<RegisterableFunction {self._impl.func_name}>"
+
 
 class implement_for:  # noqa: N801
     """A version decorator that checks version compatibility and implements functions.
@@ -49,29 +129,41 @@ class implement_for:  # noqa: N801
             Defaults to ``False``.
 
     Examples:
+        Traditional API (requires ``# noqa: F811`` on redefinitions):
+
         >>> @implement_for("gym", "0.13", "0.14")
-        >>> def fun(self, x):
+        ... def fun(self, x):
         ...     # Older gym versions will return x + 1
         ...     return x + 1
         ...
         >>> @implement_for("gym", "0.14", "0.23")
-        >>> def fun(self, x):
+        ... def fun(self, x):  # noqa: F811
         ...     # More recent gym versions will return x + 2
         ...     return x + 2
-        ...
-        >>> @implement_for(lambda: import_module("gym"), "0.23", None)
-        >>> def fun(self, x):
-        ...     # More recent gym versions will return x + 2
-        ...     return x + 2
-        ...
-        >>> @implement_for("gymnasium", None, "1.0.0")
-        >>> def fun(self, x):
-        ...     # If gymnasium is to be used instead of gym, x+3 will be returned
-        ...     return x + 3
-        ...
 
         This indicates that the function is compatible with gym 0.13+,
         but doesn't with gym 0.14+.
+
+        Register API (recommended, no ``# noqa`` needed):
+
+        The decorated function has a ``.register()`` method similar to
+        ``functools.singledispatch``. Use ``_`` as the function name for
+        registered implementations to avoid linter warnings:
+
+        >>> @implement_for("numpy")
+        ... def process_array(arr):
+        ...     '''Process array with version-specific implementation.'''
+        ...     raise NotImplementedError("No matching implementation")
+        ...
+        >>> @process_array.register(from_version=None, to_version="2.0.0")
+        ... def _(arr):
+        ...     # numpy < 2.0 implementation
+        ...     return arr * 2
+        ...
+        >>> @process_array.register(from_version="2.0.0")
+        ... def _(arr):
+        ...     # numpy >= 2.0 implementation
+        ...     return arr * 3
     """
 
     # Stores pointers to fitting implementations: dict[func_name] = func_pointer
@@ -115,6 +207,11 @@ class implement_for:  # noqa: N801
 
     @classmethod
     def get_func_name(cls, fn: Callable) -> str:
+        # Unwrap _RegisterableFunction to get the underlying function
+        if isinstance(fn, _RegisterableFunction):
+            # Use the stored func_name from the implement_for instance
+            return fn._impl.func_name
+
         # produces a name like module.Class.method or module.function
         fn_str = str(fn).split(".")
         if fn_str[0].startswith("<bound method "):
@@ -145,27 +242,39 @@ class implement_for:  # noqa: N801
         """Sets the function in its module, if it exists already."""
         if self.fn is None:
             return
-        prev_setter = type(self)._implementations.get(self.get_func_name(self.fn), None)
+        # Use self.func_name if set (for registered implementations),
+        # otherwise compute from fn
+        func_name = self.func_name or self.get_func_name(self.fn)
+        prev_setter = type(self)._implementations.get(func_name, None)
         if prev_setter is not None:
             prev_setter.do_set = False
-        type(self)._implementations[self.get_func_name(self.fn)] = self
+        type(self)._implementations[func_name] = self
         cls = self.get_class_that_defined_method(self.fn)
         if cls is not None:
-            if cls.__class__.__name__ == "function":
+            # If cls is not a class (it's a function, _RegisterableFunction, or other
+            # callable), use the module instead
+            if not isinstance(cls, type):
                 cls = inspect.getmodule(self.fn)
         else:
             # class not yet defined
             return
         try:
+            existing = getattr(cls, self.fn.__name__, None)
             delattr(cls, self.fn.__name__)
         except AttributeError:
-            pass
+            existing = None
 
         name = self.fn.__name__
         if self.class_method:
             fn = classmethod(self.fn)
         else:
             fn = self.fn
+
+        # If the existing attribute was a _RegisterableFunction, preserve the
+        # wrapper to maintain the .register() interface
+        if isinstance(existing, _RegisterableFunction):
+            fn = _RegisterableFunction(fn, existing._impl)
+
         setattr(cls, name, fn)
 
     @classmethod
@@ -192,7 +301,7 @@ class implement_for:  # noqa: N801
             out = local_call()
         return out
 
-    def __call__(self, fn: T) -> T:
+    def __call__(self, fn: T) -> T | _RegisterableFunction:
         # function names are unique
         self.func_name = self.get_func_name(fn)
         self.fn = fn
@@ -204,7 +313,8 @@ class implement_for:  # noqa: N801
             if self.class_method and _call_fn is not None:
                 return classmethod(_call_fn)  # type: ignore
 
-            return _call_fn if _call_fn is not None else fn
+            result_fn = _call_fn if _call_fn is not None else fn
+            return _RegisterableFunction(result_fn, self)
 
         @wraps(fn)
         def _lazy_call_fn(*args: Any, **kwargs: Any) -> Any:
@@ -218,7 +328,7 @@ class implement_for:  # noqa: N801
         if self.class_method:
             return classmethod(_lazy_call_fn)  # type: ignore
 
-        return _lazy_call_fn  # type: ignore
+        return _RegisterableFunction(_lazy_call_fn, self)
 
     def _check_backend_conflict(self, version: str, func_name: str) -> bool:
         """Check if there's a backend conflict and handle it."""
