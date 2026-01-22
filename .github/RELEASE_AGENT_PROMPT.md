@@ -143,31 +143,23 @@ git tag -a <VERSION> -m "Release <VERSION>"
 git push origin <VERSION>
 ```
 
-### Step 10: Create Draft GitHub Release
+### Step 10: Verify Build Workflow Triggered
 
-Extract release notes from CHANGELOG and create a draft release:
+The tag push automatically triggers the release workflow, which:
+- Builds wheels for all platforms
+- Creates a **draft GitHub release** with the wheels attached
 
-```bash
-gh release create <VERSION> --draft --title "Release <VERSION>" --notes-file -
-```
-
-Pipe the relevant CHANGELOG section as the notes. Alternatively:
-
-```bash
-gh release create <VERSION> --draft --title "Release <VERSION>" --generate-notes
-```
-
-Then edit the release notes to include the CHANGELOG content.
-
-### Step 11: Verify Build Workflow Triggered
-
-The tag push should automatically trigger the release workflow. Verify:
+Verify the workflow was triggered:
 
 ```bash
 gh run list --workflow=release.yml --limit=5
 ```
 
-Confirm that a workflow run was triggered for the tag.
+Wait for the workflow to complete, then confirm the draft release exists:
+
+```bash
+gh release view <VERSION>
+```
 
 ## Manual Steps (Inform the User)
 
@@ -232,8 +224,7 @@ After completing all steps, provide this summary to the user:
 - [x] PR created and merged to main
 - [x] Release branch rebased on main
 - [x] Tag <VERSION> created and pushed
-- [x] Draft release created on GitHub
-- [x] Build workflow triggered
+- [x] Build workflow triggered (creates draft release automatically)
 
 ### Manual Steps Required:
 1. Review draft release: <RELEASE_URL>
