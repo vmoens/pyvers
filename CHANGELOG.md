@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-01-22
+
+### Fixed
+
+- Fix descriptor protocol for `_RegisterableFunction` to properly bind `self` for instance methods
+  - Added `__get__` method so `@implement_for` decorated methods work correctly as instance methods
+  - Without this fix, instance methods would fail with "missing 1 required positional argument"
+
 ## [0.2.0] - 2026-01-22
 
 ### Added
