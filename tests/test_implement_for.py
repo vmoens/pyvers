@@ -263,53 +263,71 @@ def test_set_gym_environments(
     expected_from_version_gymnasium,
     expected_to_version_gymnasium,
 ):
-    # mock gym and gymnasium imports
-    mock_gym = uncallable(mock.MagicMock())
-    mock_gym.__version__ = gym_version
-    mock_gym.__name__ = "gym"
-    sys.modules["gym"] = mock_gym
+    # Save original modules to restore after the test
+    original_gym = sys.modules.get("gym")
+    original_gymnasium = sys.modules.get("gymnasium")
 
-    mock_gymnasium = uncallable(mock.MagicMock())
-    mock_gymnasium.__version__ = gymnasium_version
-    mock_gymnasium.__name__ = "gymnasium"
-    sys.modules["gymnasium"] = mock_gymnasium
+    try:
+        # mock gym and gymnasium imports
+        mock_gym = uncallable(mock.MagicMock())
+        mock_gym.__version__ = gym_version
+        mock_gym.__name__ = "gym"
+        sys.modules["gym"] = mock_gym
 
-    import gym
-    import gymnasium
+        mock_gymnasium = uncallable(mock.MagicMock())
+        mock_gymnasium.__version__ = gymnasium_version
+        mock_gymnasium.__name__ = "gymnasium"
+        sys.modules["gymnasium"] = mock_gymnasium
 
-    # look for the right function that should be called according to gym versions
-    # (and same for gymnasium)
-    expected_fn_gymnasium = None
-    expected_fn_gym = None
-    for impfor in implement_for._setters:
-        if impfor.fn.__name__ == "_set_gym_environments":
-            if (impfor.module_name, impfor.from_version, impfor.to_version) == (
-                "gym",
-                expected_from_version_gym,
-                expected_to_version_gym,
-            ):
-                expected_fn_gym = impfor.fn
-            elif (impfor.module_name, impfor.from_version, impfor.to_version) == (
-                "gymnasium",
-                expected_from_version_gymnasium,
-                expected_to_version_gymnasium,
-            ):
-                expected_fn_gymnasium = impfor.fn
-            if expected_fn_gym is not None and expected_fn_gymnasium is not None:
-                break
+        import gym
+        import gymnasium
 
-    with set_gym_backend(gymnasium):
-        # The module attribute may be wrapped in _RegisterableFunction
-        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
-        assert actual_fn is expected_fn_gymnasium, expected_fn_gym
+        # look for the right function that should be called according to gym versions
+        # (and same for gymnasium)
+        expected_fn_gymnasium = None
+        expected_fn_gym = None
+        for impfor in implement_for._setters:
+            if impfor.fn.__name__ == "_set_gym_environments":
+                if (impfor.module_name, impfor.from_version, impfor.to_version) == (
+                    "gym",
+                    expected_from_version_gym,
+                    expected_to_version_gym,
+                ):
+                    expected_fn_gym = impfor.fn
+                elif (impfor.module_name, impfor.from_version, impfor.to_version) == (
+                    "gymnasium",
+                    expected_from_version_gymnasium,
+                    expected_to_version_gymnasium,
+                ):
+                    expected_fn_gymnasium = impfor.fn
+                if expected_fn_gym is not None and expected_fn_gymnasium is not None:
+                    break
 
-    with set_gym_backend(gym):
-        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
-        assert actual_fn is expected_fn_gym, expected_fn_gymnasium
+        with set_gym_backend(gymnasium):
+            # The module attribute may be wrapped in _RegisterableFunction
+            actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+            assert actual_fn is expected_fn_gymnasium, expected_fn_gym
 
-    with set_gym_backend(gymnasium):
-        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
-        assert actual_fn is expected_fn_gymnasium, expected_fn_gym
+        with set_gym_backend(gym):
+            actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+            assert actual_fn is expected_fn_gym, expected_fn_gymnasium
+
+        with set_gym_backend(gymnasium):
+            actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+            assert actual_fn is expected_fn_gymnasium, expected_fn_gym
+    finally:
+        # Restore original modules to avoid polluting other tests
+        if original_gym is not None:
+            sys.modules["gym"] = original_gym
+        else:
+            sys.modules.pop("gym", None)
+        if original_gymnasium is not None:
+            sys.modules["gymnasium"] = original_gymnasium
+        else:
+            sys.modules.pop("gymnasium", None)
+        # Clear implement_for's module cache to avoid stale cached mock modules
+        implement_for._cache_modules.pop("gym", None)
+        implement_for._cache_modules.pop("gymnasium", None)
 
 
 if __name__ == "__main__":
