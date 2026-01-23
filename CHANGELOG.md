@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-01-23
+
+### Fixed
+
+- Fix `module_set()` to return raw function instead of wrapper
+  - After `module_set()` is called, the module attribute is now the raw function instead of a `_RegisterableFunction` wrapper
+  - This fixes identity comparison with `is` which was failing in downstream tests
+  - The `.register()` method is only needed during initial decoration setup, not after the function has been called
+
 ## [0.2.1] - 2026-01-22
 
 ### Fixed
