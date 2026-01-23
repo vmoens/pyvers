@@ -288,11 +288,6 @@ class implement_for:  # noqa: N801
         else:
             fn = self.fn
 
-        # If the existing attribute was a _RegisterableFunction, preserve the
-        # wrapper to maintain the .register() interface
-        if isinstance(existing, _RegisterableFunction):
-            fn = _RegisterableFunction(fn, existing._impl)
-
         setattr(cls, name, fn)
 
     @classmethod

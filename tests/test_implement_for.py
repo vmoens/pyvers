@@ -96,6 +96,19 @@ def _(x):
     return f"register_0.2-0.3:{x}"
 
 
+# Separate function for testing .register() method availability
+# This function should NOT be called by other tests to preserve the wrapper
+@implement_for("_utils_internal")
+def register_method_test(x):
+    """Function for testing .register() method availability."""
+    raise NotImplementedError("No matching version")
+
+
+@register_method_test.register(from_version="0.3")
+def _(x):
+    return f"test:{x}"
+
+
 def test_implement_for():
     assert implement_for_test_functions.select_correct_version() == "0.3+"
 
@@ -120,9 +133,15 @@ def test_register_api():
 
 
 def test_register_api_has_register_method():
-    """Test that decorated functions have a .register() method."""
-    assert hasattr(register_api_test, "register")
-    assert callable(register_api_test.register)
+    """Test that decorated functions have a .register() method.
+
+    Note: The .register() method is only available before the function is first
+    called. After the first call, module_set() replaces the _RegisterableFunction
+    wrapper with the raw function for identity comparison compatibility.
+    """
+    # Use register_method_test which is not called by other tests
+    assert hasattr(register_method_test, "register")
+    assert callable(register_method_test.register)
 
 
 def test_register_api_preserves_name():
@@ -163,6 +182,39 @@ def test_implement_for_reset():
     assert implement_for_test_functions.select_correct_version() == "0.3+"
 
 
+def test_module_set_returns_raw_function():
+    """Test that after module_set(), the module attribute is the raw function.
+
+    This is a regression test for an issue where module_set() would wrap the
+    function in _RegisterableFunction, breaking identity comparison with `is`.
+    See: https://github.com/pytorch/rl test_set_gym_environments failures.
+    """
+    # Get an implementation that matches the current version
+    matching_setter = None
+    for setter in implement_for._setters:
+        if setter.fn.__name__ == "_set_gym_environments":
+            # Check if this implementation matches (we'll use any gymnasium impl)
+            if setter.module_name == "gymnasium":
+                matching_setter = setter
+                break
+
+    if matching_setter is None:
+        pytest.skip("No matching _set_gym_environments implementation found")
+
+    # Call module_set() to set the function on the module
+    matching_setter.do_set = True
+    matching_setter.module_set()
+
+    # After module_set(), the module attribute should be the raw function,
+    # NOT a _RegisterableFunction wrapper. This allows identity comparison with `is`.
+    module_attr = getattr(_utils_internal, "_set_gym_environments", None)
+    assert module_attr is not None, "Function not set on module"
+    assert not isinstance(
+        module_attr, _RegisterableFunction
+    ), f"Expected raw function, got {type(module_attr)}"
+    assert module_attr is matching_setter.fn, "Function identity mismatch"
+
+
 @pytest.mark.parametrize(
     "version, from_version, to_version, expected_check",
     [
@@ -184,6 +236,7 @@ def test_implement_for_check_versions(
     )
 
 
+@pytest.mark.isolate
 @pytest.mark.parametrize(
     "gymnasium_version, expected_from_version_gymnasium, expected_to_version_gymnasium",
     [
@@ -211,53 +264,71 @@ def test_set_gym_environments(
     expected_from_version_gymnasium,
     expected_to_version_gymnasium,
 ):
-    # mock gym and gymnasium imports
-    mock_gym = uncallable(mock.MagicMock())
-    mock_gym.__version__ = gym_version
-    mock_gym.__name__ = "gym"
-    sys.modules["gym"] = mock_gym
+    # Save original modules to restore after the test
+    original_gym = sys.modules.get("gym")
+    original_gymnasium = sys.modules.get("gymnasium")
 
-    mock_gymnasium = uncallable(mock.MagicMock())
-    mock_gymnasium.__version__ = gymnasium_version
-    mock_gymnasium.__name__ = "gymnasium"
-    sys.modules["gymnasium"] = mock_gymnasium
+    try:
+        # mock gym and gymnasium imports
+        mock_gym = uncallable(mock.MagicMock())
+        mock_gym.__version__ = gym_version
+        mock_gym.__name__ = "gym"
+        sys.modules["gym"] = mock_gym
 
-    import gym
-    import gymnasium
+        mock_gymnasium = uncallable(mock.MagicMock())
+        mock_gymnasium.__version__ = gymnasium_version
+        mock_gymnasium.__name__ = "gymnasium"
+        sys.modules["gymnasium"] = mock_gymnasium
 
-    # look for the right function that should be called according to gym versions
-    # (and same for gymnasium)
-    expected_fn_gymnasium = None
-    expected_fn_gym = None
-    for impfor in implement_for._setters:
-        if impfor.fn.__name__ == "_set_gym_environments":
-            if (impfor.module_name, impfor.from_version, impfor.to_version) == (
-                "gym",
-                expected_from_version_gym,
-                expected_to_version_gym,
-            ):
-                expected_fn_gym = impfor.fn
-            elif (impfor.module_name, impfor.from_version, impfor.to_version) == (
-                "gymnasium",
-                expected_from_version_gymnasium,
-                expected_to_version_gymnasium,
-            ):
-                expected_fn_gymnasium = impfor.fn
-            if expected_fn_gym is not None and expected_fn_gymnasium is not None:
-                break
+        import gym
+        import gymnasium
 
-    with set_gym_backend(gymnasium):
-        # The module attribute may be wrapped in _RegisterableFunction
-        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
-        assert actual_fn is expected_fn_gymnasium, expected_fn_gym
+        # look for the right function that should be called according to gym versions
+        # (and same for gymnasium)
+        expected_fn_gymnasium = None
+        expected_fn_gym = None
+        for impfor in implement_for._setters:
+            if impfor.fn.__name__ == "_set_gym_environments":
+                if (impfor.module_name, impfor.from_version, impfor.to_version) == (
+                    "gym",
+                    expected_from_version_gym,
+                    expected_to_version_gym,
+                ):
+                    expected_fn_gym = impfor.fn
+                elif (impfor.module_name, impfor.from_version, impfor.to_version) == (
+                    "gymnasium",
+                    expected_from_version_gymnasium,
+                    expected_to_version_gymnasium,
+                ):
+                    expected_fn_gymnasium = impfor.fn
+                if expected_fn_gym is not None and expected_fn_gymnasium is not None:
+                    break
 
-    with set_gym_backend(gym):
-        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
-        assert actual_fn is expected_fn_gym, expected_fn_gymnasium
+        with set_gym_backend(gymnasium):
+            # The module attribute may be wrapped in _RegisterableFunction
+            actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+            assert actual_fn is expected_fn_gymnasium, expected_fn_gym
 
-    with set_gym_backend(gymnasium):
-        actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
-        assert actual_fn is expected_fn_gymnasium, expected_fn_gym
+        with set_gym_backend(gym):
+            actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+            assert actual_fn is expected_fn_gym, expected_fn_gymnasium
+
+        with set_gym_backend(gymnasium):
+            actual_fn = _unwrap_fn(_utils_internal._set_gym_environments)
+            assert actual_fn is expected_fn_gymnasium, expected_fn_gym
+    finally:
+        # Restore original modules to avoid polluting other tests
+        if original_gym is not None:
+            sys.modules["gym"] = original_gym
+        else:
+            sys.modules.pop("gym", None)
+        if original_gymnasium is not None:
+            sys.modules["gymnasium"] = original_gymnasium
+        else:
+            sys.modules.pop("gymnasium", None)
+        # Clear implement_for's module cache to avoid stale cached mock modules
+        implement_for._cache_modules.pop("gym", None)
+        implement_for._cache_modules.pop("gymnasium", None)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,42 @@
 """Test the NumPy/JAX example from the README."""
 
 import numpy as np
+import pytest
 
 from pyvers import get_backend, implement_for, register_backend, set_backend
 
 
+# Check if NumPy version is compatible with JAX's requirements
+# JAX >= 0.4.30 requires NumPy >= 2.0 for some internal operations
+def _check_jax_numpy_compatibility():
+    """Check if JAX and NumPy versions are compatible."""
+    try:
+        import jax
+        import jax.numpy as jnp
+
+        # Try a jitted operation that would fail with incompatible versions
+        # The issue is when JAX's jit interacts with NumPy < 2.0
+        @jax.jit
+        def _test_fn(x):
+            return jnp.greater(x, 0)
+
+        arr = jnp.asarray([1, 2, 3])
+        result = _test_fn(arr)
+        # This triggers __array__ which uses copy= kwarg requiring NumPy 2.0+
+        np.asarray(result)
+        return True
+    except (ImportError, TypeError):
+        return False
+
+
+@pytest.mark.skipif(
+    not _check_jax_numpy_compatibility(),
+    reason="JAX and NumPy versions are incompatible",
+)
 def test_numpy_jax_example():
     """Test the NumPy/JAX example from the README."""
+    import jax.numpy as jnp
+
     # Register numpy backend - you could register more than one backend!
     register_backend(group="numpy", backends={"numpy": "numpy"})
 
@@ -42,9 +72,11 @@ def test_numpy_jax_example():
     test_arr = [-1, 2, -3, 4]
     expected = [False, True, False, True]
 
-    # Test NumPy implementation
-    numpy_result = create_mask(test_arr)
-    np.testing.assert_array_equal(numpy_result, expected)
+    # Test NumPy implementation - use numpy backend explicitly
+    # since JAX was registered last and would be the default
+    with set_backend("numpy", "numpy"):
+        numpy_result = create_mask(test_arr)
+        np.testing.assert_array_equal(numpy_result, expected)
 
     # Test JAX implementation
     with set_backend("numpy", "jax.numpy"):
