@@ -236,6 +236,7 @@ def test_implement_for_check_versions(
     )
 
 
+@pytest.mark.isolate
 @pytest.mark.parametrize(
     "gymnasium_version, expected_from_version_gymnasium, expected_to_version_gymnasium",
     [

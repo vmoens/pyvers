@@ -26,7 +26,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy "jax[cpu]"
           pip install -e ".[test]"
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov pytest-isolate
 
       - name: Run tests
         run: |
