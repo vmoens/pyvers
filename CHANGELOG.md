@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-09
+
 ### Fixed
 
 - Fix pickling of `implement_for` callables captured before lazy version dispatch. Stale wrapper references now resolve to the destination process's current public implementation.
