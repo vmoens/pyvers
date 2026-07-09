@@ -4,6 +4,7 @@ from __future__ import annotations
 import collections
 import inspect
 import logging
+import pickle
 import re
 import sys
 import warnings
@@ -34,6 +35,14 @@ logger = logging.getLogger(__name__)
 VERBOSE = False
 
 T = TypeVar("T", bound=Callable)
+
+
+def _resolve_qualified_name(module_name: str, qualname: str) -> Any:
+    """Resolve an object from its module and qualified name."""
+    obj = import_module(module_name)
+    for part in qualname.split("."):
+        obj = getattr(obj, part)
+    return obj
 
 
 class _RegisterableFunction:
@@ -75,6 +84,17 @@ class _RegisterableFunction:
         # Return a bound method-like callable that passes obj as first argument
         return partial(self, obj)
 
+    def __reduce__(self) -> tuple[Callable[..., Any], tuple[str, str]]:
+        """Serialize this wrapper by its public module and qualified name."""
+        module_name = self.__module__
+        qualname = self.__qualname__
+        if "<locals>" in qualname:
+            raise pickle.PicklingError(
+                "implement_for functions defined in local scopes cannot be "
+                "pickled with the standard pickle module"
+            )
+        return _resolve_qualified_name, (module_name, qualname)
+
     def register(
         self, from_version: str | None = None, to_version: str | None = None
     ) -> Callable[[T], Self]:
@@ -100,6 +120,9 @@ class _RegisterableFunction:
         """
 
         def decorator(impl_fn: T) -> Self:
+            impl_fn.__module__ = self.__module__
+            impl_fn.__name__ = self.__name__
+            impl_fn.__qualname__ = self.__qualname__
             setter = implement_for(
                 self._impl.module_name,
                 from_version,
@@ -276,13 +299,12 @@ class implement_for:  # noqa: N801
         else:
             # class not yet defined
             return
+        name = func_name.rsplit(".", 1)[-1]
         try:
-            existing = getattr(cls, self.fn.__name__, None)
-            delattr(cls, self.fn.__name__)
+            delattr(cls, name)
         except AttributeError:
-            existing = None
+            pass
 
-        name = self.fn.__name__
         if self.class_method:
             fn = classmethod(self.fn)
         else:

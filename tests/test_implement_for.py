@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import os
+import pickle
+import subprocess
 import sys
-from copy import copy
+from copy import copy, deepcopy
 from importlib import import_module
 from unittest import mock
 
+import _pickle_utils
 import _utils_internal
 import pytest
 
@@ -213,6 +217,130 @@ def test_module_set_returns_raw_function():
         module_attr, _RegisterableFunction
     ), f"Expected raw function, got {type(module_attr)}"
     assert module_attr is matching_setter.fn, "Function identity mismatch"
+
+
+def test_pickle_wrapper_before_first_dispatch():
+    captured = _pickle_utils.before_dispatch
+    assert isinstance(captured, _RegisterableFunction)
+
+    restored = pickle.loads(pickle.dumps(captured))
+
+    assert restored is captured
+    assert restored is _pickle_utils.before_dispatch
+    assert restored("value") == "before:value"
+
+
+def test_pickle_stale_wrapper_after_repeated_decorator_dispatch():
+    captured = _pickle_utils.repeated_decorator
+    assert isinstance(captured, _RegisterableFunction)
+    assert captured("value") == "selected:value"
+    selected = _pickle_utils.repeated_decorator
+    assert captured is not selected
+
+    restored = pickle.loads(pickle.dumps(captured))
+
+    assert restored is selected
+    assert restored("restored") == "selected:restored"
+
+
+def test_pickle_stale_wrapper_after_register_dispatch():
+    captured = _pickle_utils.registered
+    assert isinstance(captured, _RegisterableFunction)
+    assert captured("value") == "registered:value"
+    selected = _pickle_utils.registered
+    assert captured is not selected
+
+    restored = pickle.loads(pickle.dumps(captured))
+
+    assert restored is selected
+    assert restored("restored") == "registered:restored"
+
+
+def test_pickle_stale_instance_method_wrapper():
+    instance = _pickle_utils.PickleableMethods()
+    captured = _pickle_utils.PickleableMethods.instance_method
+    assert isinstance(captured, _RegisterableFunction)
+    assert captured(instance, "value") == "method:value"
+    selected = _pickle_utils.PickleableMethods.instance_method
+    assert captured is not selected
+
+    restored = pickle.loads(pickle.dumps(captured))
+
+    assert restored is selected
+    assert restored(instance, "restored") == "method:restored"
+    assert instance.instance_method("bound") == "method:bound"
+
+
+def test_pickle_stale_wrapper_in_fresh_process(tmp_path):
+    captured = _pickle_utils.fresh_process
+    assert captured("parent") == "fresh:parent"
+    assert captured is not _pickle_utils.fresh_process
+
+    payload = tmp_path / "stale-wrapper.pkl"
+    payload.write_bytes(pickle.dumps(captured))
+    script = """
+import pickle
+import sys
+
+from pyvers.implement_for import _RegisterableFunction
+
+restored = pickle.loads(open(sys.argv[1], "rb").read())
+import _pickle_utils
+
+assert isinstance(restored, _RegisterableFunction)
+assert restored is _pickle_utils.fresh_process
+assert restored("child") == "fresh:child"
+assert not isinstance(_pickle_utils.fresh_process, _RegisterableFunction)
+"""
+    env = os.environ.copy()
+    tests_dir = os.path.abspath(os.path.dirname(__file__))
+    env["PYTHONPATH"] = os.pathsep.join(
+        path for path in (tests_dir, env.get("PYTHONPATH")) if path
+    )
+
+    subprocess.run(
+        [sys.executable, "-c", script, str(payload)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+@pytest.mark.parametrize("function_name", ["unsupported_version", "missing_module"])
+def test_pickle_preserves_call_time_dispatch_errors(function_name):
+    captured = getattr(_pickle_utils, function_name)
+    restored = pickle.loads(pickle.dumps(captured))
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        restored()
+    assert str(exc_info.value) == (
+        f"Supported version of '_pickle_utils.{function_name}' has not been found."
+    )
+
+
+def test_pickle_rejects_local_scope_function():
+    @implement_for("_pickle_utils", "0.3")
+    def local_function():
+        return "local"
+
+    with pytest.raises(
+        pickle.PicklingError,
+        match="implement_for functions defined in local scopes cannot be pickled",
+    ):
+        pickle.dumps(local_function)
+
+
+def test_copy_uses_global_reference_semantics():
+    captured = _pickle_utils.copy_target
+    assert copy(captured) is captured
+    assert deepcopy(captured) is captured
+
+    assert captured("value") == "copy:value"
+    selected = _pickle_utils.copy_target
+    assert captured is not selected
+    assert copy(captured) is selected
+    assert deepcopy(captured) is selected
 
 
 @pytest.mark.parametrize(
